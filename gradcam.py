@@ -1,35 +1,49 @@
 import numpy as np
-import cv2
-from tensorflow.keras.models import Model
 import tensorflow as tf
+import cv2
 
-def generate_gradcam(model, img_array, layer_name=None):
+def get_last_conv_layer_name(model):
+    for layer in reversed(model.layers):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            return layer.name
+    raise ValueError("No Conv2D layer found in model")
 
-    if layer_name is None:
-        layer_name = model.layers[-3].name
+def make_gradcam_heatmap(model, img_array):
+    """
+    img_array: (1, H, W, 3) uint8 or float32 in 0-255
+    returns: heatmap (H,W) normalized 0-1, pred_idx (int)
+    """
+    # Ensure float32
+    img_input = tf.cast(img_array, tf.float32)
 
-    grad_model = Model(
-        inputs=[model.inputs],
-        outputs=[model.get_layer(layer_name).output, model.output]
-    )
+    last_conv = get_last_conv_layer_name(model)
+    grad_model = tf.keras.models.Model([model.inputs], [model.get_layer(last_conv).output, model.output])
 
     with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(img_array)
-        loss = predictions[:, tf.argmax(predictions[0])]
+        conv_outputs, predictions = grad_model(img_input)
+        pred_index = tf.argmax(predictions[0])
+        loss = predictions[:, pred_index]
 
-    grads = tape.gradient(loss, conv_outputs)[0]
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1))
+    grads = tape.gradient(loss, conv_outputs)
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
 
-    conv_output = conv_outputs[0]
+    conv_outputs = conv_outputs[0].numpy()
+    pooled_grads = pooled_grads.numpy()
 
-    heatmap = tf.reduce_sum(tf.multiply(pooled_grads, conv_output), axis=-1)
-
+    heatmap = np.dot(conv_outputs, pooled_grads)
     heatmap = np.maximum(heatmap, 0)
-    heatmap /= np.max(heatmap) + 1e-10
+    if heatmap.max() != 0:
+        heatmap = heatmap / (heatmap.max() + 1e-8)
+    else:
+        heatmap = heatmap
 
-    heatmap = cv2.resize(heatmap.numpy(), (224, 224))
-    heatmap = np.uint8(255 * heatmap)
+    return heatmap, int(pred_index)
 
-    heatmap_color = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-
-    return heatmap_color
+def overlay_heatmap(original_img, heatmap, alpha=0.4):
+    """original_img: H,W,3 uint8 ; heatmap: H,W 0-1"""
+    h, w = original_img.shape[:2]
+    heatmap_resized = cv2.resize(heatmap, (w, h))
+    heatmap_uint8 = np.uint8(255 * heatmap_resized)
+    heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+    overlay = cv2.addWeighted(original_img.astype("uint8"), 1 - alpha, heatmap_color, alpha, 0)
+    return overlay

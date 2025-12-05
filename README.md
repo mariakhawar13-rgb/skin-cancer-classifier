@@ -1,16 +1,18 @@
-# Skin Cancer Detection App
+Skin Cancer Classifier + Grad-CAM
+--------------------------------
 
-A simple Streamlit application to classify skin lesion images using a trained CNN model.
+Files:
+- app.py
+- gradcam.py
+- helper.py
+- requirements.txt
+- skin_cancer_model.h5  <-- add your .h5 model here (saved from Colab)
 
-## How to run locally
+How to run locally:
+1. create virtualenv
+2. pip install -r requirements.txt
+3. streamlit run app.py
 
-1. Install dependencies:`pip install -r requirements.txt`
-
-
-2. Run the app: `streamlit run app.py`
-
-## Model
-Uses a pre-trained EfficientNet model fine-tuned on skin cancer images.
-
-## Disclaimer
-This app is for educational purposes only. Always consult healthcare professionals for medical diagnoses.
+Deploy:
+1. Push repo to GitHub (use Git LFS for the .h5 if >25MB)
+2. On Streamlit Cloud, connect repo and select app.py
